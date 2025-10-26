@@ -62,11 +62,45 @@ export async function searchAnime(url) {
   const mangoSource = new MangoSource();
   const bilibiliSource = new BilibiliSource();
 
-  const queryTitle = url.searchParams.get("keyword");
+  let queryTitle = url.searchParams.get("keyword");
   log("info", `Search anime with keyword: ${queryTitle}`);
+  
+  // 电影关键词预处理：从复杂文件名中提取干净的标题和年份
+  let cleanSearchKeyword = queryTitle;
+  
+  // 尝试提取电影标题和年份
+  const movieTitleRegex = /^(.+?)[.\s]+(\d{4})[.\s]/;
+  const movieMatch = queryTitle.match(movieTitleRegex);
+  
+  if (movieMatch) {
+    // 提取到电影标题和年份，构建更干净的搜索关键词
+    const movieTitle = movieMatch[1].trim();
+    const movieYear = movieMatch[2];
+    cleanSearchKeyword = `${movieTitle} ${movieYear}`;
+    log("info", `Extracted movie title and year: ${movieTitle} (${movieYear})`);
+    log("info", `Using cleaned search keyword: ${cleanSearchKeyword}`);
+  } else {
+    // 尝试移除常见的文件后缀和格式标记
+    cleanSearchKeyword = cleanSearchKeyword.replace(/\.\w{3,4}$/, ''); // 移除文件扩展名
+    cleanSearchKeyword = cleanSearchKeyword.replace(/[.\s][0-9]+p[.\s]/i, ' '); // 移除分辨率
+    cleanSearchKeyword = cleanSearchKeyword.replace(/[.\s](UHD|BluRay|REMUX|HEVC|HDR|DTS|TrueHD|AAC|x264|x265|MP4|MKV|WebDL|HDTV|DVD|BD|HD)[.\s]/gi, ' '); // 移除格式标记
+    cleanSearchKeyword = cleanSearchKeyword.replace(/[-_]/g, ' '); // 替换连字符和下划线为空格
+    cleanSearchKeyword = cleanSearchKeyword.replace(/\s+/g, ' ').trim(); // 合并多个空格
+    
+    if (cleanSearchKeyword !== queryTitle) {
+      log("info", `Cleaned search keyword: ${cleanSearchKeyword}`);
+    }
+  }
+  
+  // 使用预处理后的关键词进行实际搜索
+  const searchTitle = cleanSearchKeyword;
 
-  // 检查搜索缓存
-  const cachedResults = getSearchCache(queryTitle);
+  // 检查搜索缓存（同时检查原始关键词和处理后的关键词）
+  let cachedResults = getSearchCache(searchTitle);
+  if (cachedResults === null && queryTitle !== searchTitle) {
+    cachedResults = getSearchCache(queryTitle);
+  }
+  
   if (cachedResults !== null) {
     return jsonResponse({
       errorCode: 0,
@@ -104,8 +138,7 @@ export async function searchAnime(url) {
     } else if (queryTitle.includes(".youku.com")) {
       platform = "youku";
     } else if (queryTitle.includes(".bilibili.com")) {
-      platform = "bilibili1";
-    }
+      platform = "bilibili1";    }
 
     const pageTitle = await getPageTitle(queryTitle);
 
@@ -135,16 +168,16 @@ export async function searchAnime(url) {
     // 根据 sourceOrderArr 动态构建请求数组
     log("info", `Search sourceOrderArr: ${globals.sourceOrderArr}`);
     const requestPromises = globals.sourceOrderArr.map(source => {
-      if (source === "360") return kan360Source.search(queryTitle);
-      if (source === "vod") return vodSource.search(queryTitle);
-      if (source === "renren") return renrenSource.search(queryTitle);
-      if (source === "hanjutv") return hanjutvSource.search(queryTitle);
-      if (source === "bahamut") return bahamutSource.search(queryTitle);
-      if (source === "tencent") return tencentSource.search(queryTitle);
-      if (source === "youku") return youkuSource.search(queryTitle);
-      if (source === "iqiyi") return iqiyiSource.search(queryTitle);
-      if (source === "imgo") return mangoSource.search(queryTitle);
-      if (source === "bilibili") return bilibiliSource.search(queryTitle);
+      if (source === "360") return kan360Source.search(searchTitle);
+      if (source === "vod") return vodSource.search(searchTitle);
+      if (source === "renren") return renrenSource.search(searchTitle);
+      if (source === "hanjutv") return hanjutvSource.search(searchTitle);
+      if (source === "bahamut") return bahamutSource.search(searchTitle);
+      if (source === "tencent") return tencentSource.search(searchTitle);
+      if (source === "youku") return youkuSource.search(searchTitle);
+      if (source === "iqiyi") return iqiyiSource.search(searchTitle);
+      if (source === "imgo") return mangoSource.search(searchTitle);
+      if (source === "bilibili") return bilibiliSource.search(searchTitle);
     });
 
     // 执行所有请求并等待结果
@@ -165,37 +198,37 @@ export async function searchAnime(url) {
     for (const key of globals.sourceOrderArr) {
       if (key === '360') {
         // 等待处理360来源
-        await kan360Source.handleAnimes(animes360, queryTitle, curAnimes);
+        await kan360Source.handleAnimes(animes360, searchTitle, curAnimes);
       } else if (key === 'vod') {
         // 等待处理Vod来源（遍历所有VOD服务器的结果）
         if (animesVodResults && Array.isArray(animesVodResults)) {
           for (const vodResult of animesVodResults) {
             if (vodResult && vodResult.list && vodResult.list.length > 0) {
-              await vodSource.handleAnimes(vodResult.list, queryTitle, curAnimes, vodResult.serverName);
+              await vodSource.handleAnimes(vodResult.list, searchTitle, curAnimes, vodResult.serverName);
             }
           }
         }
       } else if (key === 'renren') {
         // 等待处理Renren来源
-        await renrenSource.handleAnimes(animesRenren, queryTitle, curAnimes);
+        await renrenSource.handleAnimes(animesRenren, searchTitle, curAnimes);
       } else if (key === 'hanjutv') {
         // 等待处理Hanjutv来源
-        await hanjutvSource.handleAnimes(animesHanjutv, queryTitle, curAnimes);
+        await hanjutvSource.handleAnimes(animesHanjutv, searchTitle, curAnimes);
       } else if (key === 'bahamut') {
         // 等待处理Bahamut来源
-        await bahamutSource.handleAnimes(animesBahamut, queryTitle, curAnimes);
+        await bahamutSource.handleAnimes(animesBahamut, searchTitle, curAnimes);
       } else if (key === 'tencent') {
         // 等待处理Tencent来源
-        await tencentSource.handleAnimes(animesTencent, queryTitle, curAnimes);
+        await tencentSource.handleAnimes(animesTencent, searchTitle, curAnimes);
       } else if (key === 'youku') {
         // 等待处理Youku来源
-        await youkuSource.handleAnimes(animesYouku, queryTitle, curAnimes);
+        await youkuSource.handleAnimes(animesYouku, searchTitle, curAnimes);
       } else if (key === 'iqiyi') {
         // 等待处理iQiyi来源
-        await iqiyiSource.handleAnimes(animesIqiyi, queryTitle, curAnimes);
+        await iqiyiSource.handleAnimes(animesIqiyi, searchTitle, curAnimes);
       } else if (key === 'imgo') {
         // 等待处理Mango来源
-        await mangoSource.handleAnimes(animesImgo, queryTitle, curAnimes);
+        await mangoSource.handleAnimes(animesImgo, searchTitle, curAnimes);
       } else if (key === 'bilibili') {
         // 等待处理Bilibili来源
         await bilibiliSource.handleAnimes(animesBilibili, queryTitle, curAnimes);
@@ -245,14 +278,17 @@ export async function searchAnime(url) {
   }
 
   // 如果有新的anime获取到，则更新redis
-  if (globals.redisValid && curAnimes.length !== 0) {
+    if (globals.redisValid && curAnimes.length !== 0) {
       await updateRedisCaches();
-  }
+    }
 
-  // 缓存搜索结果
-  if (curAnimes.length > 0) {
-    setSearchCache(queryTitle, curAnimes);
-  }
+    // 缓存搜索结果（同时缓存原始关键词和处理后的关键词）
+    if (curAnimes.length > 0) {
+      addSearchCache(searchTitle, curAnimes);
+      if (queryTitle !== searchTitle) {
+        addSearchCache(queryTitle, curAnimes);
+      }
+    }
 
   return jsonResponse({
     errorCode: 0,
