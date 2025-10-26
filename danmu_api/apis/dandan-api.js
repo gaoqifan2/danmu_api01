@@ -322,7 +322,11 @@ async function matchAniAndEp(season, episode, searchData, title, req, platform, 
     for (const anime of searchData.animes) {
       if (preferAnimeId && anime.bangumiId.toString() !== preferAnimeId.toString()) continue;
       const animeTitle = anime.animeTitle.split("(")[0].trim();
-      if (animeTitle === title) {
+      // 更宽松的匹配条件，支持电影标题匹配
+      // 1. 完全匹配
+      // 2. 动画标题包含搜索标题
+      // 3. 搜索标题包含动画标题（可能有副标题等情况）
+      if (animeTitle === title || animeTitle.includes(title) || title.includes(animeTitle)) {
         let originBangumiUrl = new URL(req.url.replace("/match", `bangumi/${anime.bangumiId}`));
         const bangumiRes = await getBangumi(originBangumiUrl.pathname);
         const bangumiData = await bangumiRes.json();
@@ -350,11 +354,38 @@ async function matchAniAndEp(season, episode, searchData, title, req, platform, 
 }
 
 async function fallbackMatchAniAndEp(searchData, req, season, episode, resEpisode, resAnime) {
+  // 从searchData中提取标题用于匹配
+  let searchTitle = '';
+  if (searchData && searchData.animes && searchData.animes.length > 0) {
+    // 尝试从搜索关键词中提取标题（去掉年份）
+    const urlParams = new URL(req.url).searchParams;
+    const keyword = urlParams.get('keyword');
+    if (keyword) {
+      // 如果关键词包含年份，尝试提取纯标题
+      const yearMatch = keyword.match(/^(.+?)\s+(\d{4})$/);
+      searchTitle = yearMatch ? yearMatch[1].trim() : keyword.trim();
+    }
+  }
+  
   for (const anime of searchData.animes) {
     let originBangumiUrl = new URL(req.url.replace("/match", `bangumi/${anime.bangumiId}`));
     const bangumiRes = await getBangumi(originBangumiUrl.pathname);
     const bangumiData = await bangumiRes.json();
     log("info", bangumiData);
+    
+    // 电影匹配（没有season和episode时）使用宽松匹配
+    if (!season && !episode && searchTitle) {
+      const animeTitle = anime.animeTitle.split("(")[0].trim();
+      // 宽松匹配条件
+      if (animeTitle === searchTitle || animeTitle.includes(searchTitle) || searchTitle.includes(animeTitle)) {
+        if (bangumiData.bangumi.episodes.length > 0) {
+          resEpisode = bangumiData.bangumi.episodes[0];
+          resAnime = anime;
+          break;
+        }
+      }
+    }
+    
     if (season && episode) {
       // 过滤集标题正则条件的 episode
       const filteredTmpEpisodes = bangumiData.bangumi.episodes.filter(episode => {
